@@ -1,4 +1,14 @@
-import { createElement, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
+
+type MembershipSection = "Kepesertaan Beranda" | "Skala Usaha" | "Lapangan Usaha";
+type MembershipDashboardTab = "Tenaga Kerja" | "PKBU" | "Iuran" | "Piutang";
+
+const membershipSections: { id: MembershipSection; label: string }[] = [
+  { id: "Kepesertaan Beranda", label: "Beranda" },
+  { id: "Skala Usaha", label: "Skala Usaha" },
+  { id: "Lapangan Usaha", label: "Lapangan Usaha" },
+];
 
 type IconName =
   | "briefcase"
@@ -114,6 +124,7 @@ function ProgressCard({
   target,
   value,
   detailHint,
+  simple,
 }: {
   label: string;
   onClick?: () => void;
@@ -122,7 +133,9 @@ function ProgressCard({
   target: string;
   value: string;
   detailHint?: boolean;
+  simple?: boolean;
 }) {
+  const progressValue = Math.min(100, Math.max(0, Number.parseFloat(percent.replace(",", ".")) || 0));
   const content = (
     <>
       <div className="section-heading">
@@ -132,10 +145,17 @@ function ProgressCard({
         </span>
         <strong>{percent}<small>Capaian YTD</small></strong>
       </div>
-      <div className="progress-bar">
-        {segments.map((segment, index) => <span className={`progress-segment segment-${index + 1}`} key={segment}>{segment}</span>)}
-        <span className="progress-rest">Sisa Target</span>
-      </div>
+      {simple ? (
+        <div className="progress-bar simple-progress" aria-label={`${label}: ${percent}`}>
+          <span className="simple-progress-fill" style={{ width: `${progressValue}%` }}>{percent}</span>
+          <span className="progress-rest">Sisa {(100 - progressValue).toLocaleString("id-ID", { maximumFractionDigits: 2 })}%</span>
+        </div>
+      ) : (
+        <div className="progress-bar">
+          {segments.map((segment, index) => <span className={`progress-segment segment-${index + 1}`} key={segment}>{segment}</span>)}
+          <span className="progress-rest">Sisa Target</span>
+        </div>
+      )}
       <div className="progress-meta">Realisasi : <b>{value}</b><i />Target : <b>{target}</b></div>
     </>
   );
@@ -161,13 +181,13 @@ function Sidebar({
   onLogout: () => void;
 }) {
   const [investOpen, setInvestOpen] = useState(true);
+  const [membershipOpen, setMembershipOpen] = useState(true);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const nav = [
     ["Beranda", "home"],
-    ["Kepesertaan", "people"],
-    ["Pelayanan", "service"],
   ] as const;
+  const membershipActive = membershipSections.some((item) => item.id === active) || active === "Kepesertaan";
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -194,10 +214,33 @@ function Sidebar({
             <Icon name={icon} /><span>{label}</span>
           </Button>
         ))}
+        <Button
+          className={membershipActive ? "nav-item active" : "nav-item"}
+          onClick={() => {
+            setMembershipOpen((value) => !value);
+            if (!membershipActive) onChange("Kepesertaan Beranda");
+          }}
+        >
+          <Icon name="people" /><span>Kepesertaan</span><Icon name="chevron" />
+        </Button>
+        {membershipOpen && !collapsed && (
+          <div className="subnav membership-subnav">
+            {membershipSections.map((item) => (
+              <Button
+                className={active === item.id ? "active" : ""}
+                key={item.id}
+                onClick={() => { onChange(item.id); onCloseSidebar(); }}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+        )}
+        <Button className={active === "Pelayanan" ? "nav-item active" : "nav-item"} onClick={() => { onChange("Pelayanan"); onCloseSidebar(); }}><Icon name="service" /><span>Pelayanan</span></Button>
         <Button className={active === "Investasi" ? "nav-item active" : "nav-item"} onClick={() => { onChange("Investasi"); setInvestOpen(!investOpen); }}>
           <Icon name="invest" /><span>Investasi</span><Icon name="chevron" />
         </Button>
-        {investOpen && !collapsed && <div className="subnav"><span>Dana</span><span>Hasil</span></div>}
+        {investOpen && !collapsed && <div className="subnav invest-subnav"><span>Dana</span><span>Hasil</span></div>}
         <Button className="nav-item" onClick={() => { onChange("Channel"); onCloseSidebar(); }}><Icon name="service" /><span>Channel</span><Icon name="chevron" /></Button>
         <Button className="nav-item" onClick={() => { onChange("Profil PK/BU"); onCloseSidebar(); }}><Icon name="briefcase" /><span>Profil PK/BU</span></Button>
       </nav>
@@ -255,6 +298,59 @@ const coverageRows = [
   { name: "Riau", coverage: 30.5, potential: "660 rb", up: false },
   { name: "Kalimantan Barat", coverage: 30.5, potential: "660 rb", up: true },
 ];
+
+const coverageHierarchy = coverageRows.map((province, provinceIndex) => ({
+  ...province,
+  kanwil: [0, 1].map((kanwilIndex) => ({
+    name: `${province.name} ${kanwilIndex === 0 ? "Utara" : "Selatan"}`,
+    coverage: Math.max(8, province.coverage + (kanwilIndex === 0 ? 4.2 : -3.1)),
+    potential: kanwilIndex === 0 ? "1,82 jt" : "1,14 jt",
+    branches: [0, 1].map((branchIndex) => ({
+      name: `Kantor Cabang ${provinceIndex + 1}${String.fromCharCode(65 + kanwilIndex * 2 + branchIndex)}`,
+      coverage: Math.max(5, province.coverage + (branchIndex === 0 ? 6.4 : -5.2)),
+      potential: branchIndex === 0 ? "620 rb" : "410 rb",
+    })),
+  })),
+}));
+
+function CoverageHierarchy() {
+  const [openProvinces, setOpenProvinces] = useState<string[]>([]);
+  const [openKanwil, setOpenKanwil] = useState<string[]>([]);
+  const toggle = (value: string, values: string[], setter: (values: string[]) => void) => {
+    setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  };
+  return (
+    <div className="coverage-hierarchy">
+      <div className="coverage-hierarchy-head"><span>Wilayah</span><span>Coverage</span><span>Sisa Potensi</span></div>
+      {coverageHierarchy.map((province) => {
+        const provinceOpen = openProvinces.includes(province.name);
+        return (
+          <div key={province.name}>
+            <button className="coverage-hierarchy-row province" onClick={() => toggle(province.name, openProvinces, setOpenProvinces)} type="button">
+              <span><i>{provinceOpen ? "−" : "+"}</i>{province.name}</span><b>{province.coverage.toLocaleString("id-ID", { minimumFractionDigits: 1 })}%</b><strong>{province.potential}</strong>
+            </button>
+            {provinceOpen && province.kanwil.map((kanwil) => {
+              const key = `${province.name}-${kanwil.name}`;
+              const kanwilOpen = openKanwil.includes(key);
+              return (
+                <div key={key}>
+                  <button className="coverage-hierarchy-row kanwil" onClick={() => toggle(key, openKanwil, setOpenKanwil)} type="button">
+                    <span><i>{kanwilOpen ? "−" : "+"}</i>{kanwil.name}</span><b>{kanwil.coverage.toLocaleString("id-ID", { minimumFractionDigits: 1 })}%</b><strong>{kanwil.potential}</strong>
+                  </button>
+                  {kanwilOpen && kanwil.branches.map((branch) => (
+                    <div className="coverage-hierarchy-row branch" key={branch.name}>
+                      <span><i />{branch.name}</span><b>{branch.coverage.toLocaleString("id-ID", { minimumFractionDigits: 1 })}%</b><strong>{branch.potential}</strong>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const sectorRows = [
   { name: "Pertanian", coverage: 18.4, potential: "29,80 jt", up: true },
@@ -320,8 +416,8 @@ function CoveragePage({ onBack }: { onBack: () => void }) {
           <div><small>Potensi</small><strong>129.983.320</strong><i>**Sakernas 2025</i></div>
           <div><small>Sisa</small><strong>81.153.137</strong><i className="blue-value">(62,43%)</i></div>
         </div>
-        <div className="coverage-progress">
-          <span>TW I: 15,20%</span><span>TW II: 12,37%</span><span>TW III: 10,00%</span><span>Sisa Target: 62,43%</span>
+        <div className="coverage-progress" aria-label="Coverage 37,57%">
+          <span className="coverage-progress-fill">37,57%</span><span className="coverage-progress-rest">Sisa 62,43%</span>
         </div>
       </section>
 
@@ -358,7 +454,7 @@ function CoveragePage({ onBack }: { onBack: () => void }) {
               </div></div>
               {ranking === "Peringkat" ? (
                 <>
-                  <CoverageTable rows={coverageRows} title="" />
+                  <CoverageHierarchy />
                   <Button className="show-all">Tampilkan semua 38 propinsi</Button>
                 </>
               ) : (
@@ -379,10 +475,7 @@ function CoveragePage({ onBack }: { onBack: () => void }) {
           </div>
         </>
       ) : (
-        <section className="tabular-card">
-          <div className="tabular-head"><span>Provinsi</span><span>Coverage</span><span>Sisa Potensi</span></div>
-          {coverageRows.map((row) => <div key={row.name}><b>{row.name}</b><span>{row.coverage.toLocaleString("id-ID")}%</span><span>{row.potential}</span></div>)}
-        </section>
+        <section className="tabular-card coverage-tabular"><CoverageHierarchy /></section>
       )}
     </main>
   );
@@ -468,14 +561,108 @@ function TrendChart({ label = "Tenaga Kerja Aktif" }: { label?: string }) {
     <section className="trend-chart-card">
       <div className="analysis-heading">
         <div><b>Tren {label}</b><small>Posisi Akhir Bulan</small></div>
-        <span>Jul 2026 <b className="positive">+3,02% vs Bulan Lalu</b></span>
+        <div className="trend-heading-stats">
+          <span>Jul 2026 <b className="positive">+3,02% vs Bulan Lalu</b></span>
+          <strong className="chart-total-inline">27,9 jt<small>Total</small></strong>
+        </div>
       </div>
       <div className="line-bars">
         {bars.map((height, index) => <i className={`line-bar bar-height-${height}`} key={index} />)}
-        <span className="chart-total">27,9 jt<small>Total</small></span>
       </div>
       <div className="chart-months"><span>Agu 2025</span><span>Nov 2025</span><span>Feb 2026</span><span>Mei 2026</span><span>Jul 2026</span></div>
       <small className="chart-note">Sumbu vertikal tidak dimulai dari 0 agar perubahan antarbulan terlihat.</small>
+    </section>
+  );
+}
+
+const pkbuTrendData = [
+  { month: "Agu", year: 2025, value: 781_450 },
+  { month: "Sep", year: 2025, value: 794_220 },
+  { month: "Okt", year: 2025, value: 806_980 },
+  { month: "Nov", year: 2025, value: 801_330 },
+  { month: "Des", year: 2025, value: 818_760 },
+  { month: "Jan", year: 2026, value: 829_540 },
+  { month: "Feb", year: 2026, value: 838_105 },
+  { month: "Mar", year: 2026, value: 846_920 },
+  { month: "Apr", year: 2026, value: 855_410 },
+  { month: "Mei", year: 2026, value: 861_870 },
+  { month: "Jun", year: 2026, value: 872_530 },
+  { month: "Jul", year: 2026, value: 898_887 },
+];
+
+function PkbuTrendChart() {
+  const [hover, setHover] = useState<number | null>(null);
+  const data = pkbuTrendData;
+  const width = 560;
+  const height = 250;
+  const pad = { top: 22, right: 18, bottom: 30, left: 50 };
+  const yMin = 760_000;
+  const yMax = 920_000;
+  const yStep = 40_000;
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const getX = (i: number) => pad.left + (i / (data.length - 1)) * innerW;
+  const getY = (v: number) => pad.top + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+  const fmt = (v: number) => v.toLocaleString("id-ID");
+
+  const line = data.map((d, i) => `${i === 0 ? "M" : "L"}${getX(i)},${getY(d.value)}`).join(" ");
+  const area = `${line} L${getX(data.length - 1)},${pad.top + innerH} L${getX(0)},${pad.top + innerH} Z`;
+  const ticks = Array.from({ length: (yMax - yMin) / yStep + 1 }, (_, i) => yMin + i * yStep);
+
+  const lastIndex = data.length - 1;
+  const active = hover ?? lastIndex;
+  const point = data[active];
+  const prev = active > 0 ? data[active - 1] : null;
+  const change = prev ? ((point.value - prev.value) / prev.value) * 100 : null;
+  const tipW = 112;
+  const tipX = Math.min(Math.max(getX(active) - tipW / 2, pad.left), width - pad.right - tipW);
+
+  return (
+    <section className="trend-chart-card pkbu-trend-card">
+      <div className="analysis-heading">
+        <div><b>Tren PKBU Aktif</b><small>Posisi Akhir Bulan</small></div>
+        <div className="trend-heading-stats">
+          <span>
+            {point.month} {point.year}
+            {change !== null
+              ? <b className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toLocaleString("id-ID", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}% vs Bulan Lalu</b>
+              : <b>Awal periode</b>}
+          </span>
+          <strong className="chart-total-inline">{fmt(point.value)}<small>PKBU Aktif</small></strong>
+        </div>
+      </div>
+      <svg className="pkbu-trend-svg" onMouseLeave={() => setHover(null)} role="img" aria-label="Grafik tren PKBU Aktif Agustus 2025 sampai Juli 2026" viewBox={`0 0 ${width} ${height}`}>
+        <defs>
+          <linearGradient id="pkbuTrendFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--blue-700)" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="var(--blue-700)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line stroke="var(--line)" strokeDasharray={t === yMin ? undefined : "3 4"} strokeWidth="1" x1={pad.left} x2={width - pad.right} y1={getY(t)} y2={getY(t)} />
+            <text fill="var(--muted)" fontSize="10" textAnchor="end" x={pad.left - 8} y={getY(t) + 3.5}>{t / 1000} rb</text>
+          </g>
+        ))}
+        <path d={area} fill="url(#pkbuTrendFill)" />
+        <path d={line} fill="none" stroke="var(--blue-700)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
+        {data.map((d, i) => (
+          <text key={d.month} fill={i === active ? "var(--blue-900)" : "var(--muted)"} fontSize="10" fontWeight={i === active ? 700 : 400} textAnchor="middle" x={getX(i)} y={height - 10}>{d.month}</text>
+        ))}
+        <line stroke="var(--blue-700)" strokeDasharray="3 3" strokeOpacity="0.5" x1={getX(active)} x2={getX(active)} y1={getY(point.value)} y2={pad.top + innerH} />
+        <circle cx={getX(active)} cy={getY(point.value)} fill="var(--blue-700)" r="5.5" stroke="var(--surface)" strokeWidth="2.5" />
+        {hover !== null && (
+          <g pointerEvents="none">
+            <rect fill="var(--blue-900)" height="34" rx="5" width={tipW} x={tipX} y={Math.max(getY(point.value) - 46, 2)} />
+            <text fill="var(--surface)" fontSize="9" opacity="0.8" textAnchor="middle" x={tipX + tipW / 2} y={Math.max(getY(point.value) - 46, 2) + 13}>{point.month} {point.year}</text>
+            <text fill="var(--surface)" fontSize="11.5" fontWeight="700" textAnchor="middle" x={tipX + tipW / 2} y={Math.max(getY(point.value) - 46, 2) + 27}>{fmt(point.value)}</text>
+          </g>
+        )}
+        {data.map((d, i) => (
+          <rect key={`hit-${d.month}`} fill="transparent" height={innerH + pad.top} onMouseEnter={() => setHover(i)} width={innerW / (data.length - 1)} x={getX(i) - innerW / (data.length - 1) / 2} y={0} />
+        ))}
+      </svg>
+      <small className="chart-note">Sumbu vertikal dimulai dari 760 rb agar perubahan antarbulan terlihat.</small>
     </section>
   );
 }
@@ -500,9 +687,9 @@ function SegmentAnalysis({ segment }: { segment: string }) {
           <img alt="Plot placeholder" src="/appendix/Halaman testing (5).svg" />
         </section>
         <div className="konsolidasi-right">
-          <section className="analysis-card">
+          <section className="analysis-card konsolidasi-trend-card">
             <div className="analysis-heading"><b>Tren Kepesertaan</b><span>JAN - SEP 2026</span></div>
-            <SingleLineChart data={trendData} yMax={60_000_000} yInterval={10_000_000} />
+            <SingleLineChart data={trendData} fill yMax={60_000_000} yInterval={10_000_000} />
           </section>
           <section className="analysis-card">
             <div className="analysis-heading"><b>Analisis Pergerakan & Tren Kepesertaan</b><span>Diurutkan dari terbesar</span></div>
@@ -615,18 +802,6 @@ function SegmentAnalysis({ segment }: { segment: string }) {
       { name: "Mikro", value: "2.233.149", percent: 8, color: scaleColors[3] },
     ];
 
-    const fieldColors = ["var(--blue-900)", "var(--blue-700)", "var(--green-500)", "var(--lime)", "var(--red-600)", "var(--line)"];
-    const fieldPercents = [53.22, 14.69, 8.99, 7.11, 4.85];
-    const fieldTotal = fieldPercents.reduce((sum, p) => sum + p, 0);
-    const fieldData = [
-      { name: "Perdagangan dan Jasa", value: "53,22%", percent: 53.22, color: fieldColors[0] },
-      { name: "Industri Barang Konsumsi", value: "14,69%", percent: 14.69, color: fieldColors[1] },
-      { name: "Aneka Industri", value: "8,99%", percent: 8.99, color: fieldColors[2] },
-      { name: "Pertanian, Perikanan, Perkebunan", value: "7,11%", percent: 7.11, color: fieldColors[3] },
-      { name: "Energi, Telekomunikasi, Transportasi", value: "4,85%", percent: 4.85, color: fieldColors[4] },
-      { name: "Lainnya", value: "—", percent: parseFloat((100 - fieldTotal).toFixed(2)), color: fieldColors[5] },
-    ];
-
     const sortedKantorWilayahRows = kantorWilayahRows;
 
     const lineData = [
@@ -641,28 +816,12 @@ function SegmentAnalysis({ segment }: { segment: string }) {
       { month: "SEP", value: 28_800_000 },
     ];
 
-    const lapanganUsahaRows = [
-      { name: "Perdagangan dan jasa", percent: 68.5, value: "9.245.120" },
-      { name: "Industri barang konsumsi", percent: 42.3, value: "4.512.876" },
-      { name: "Aneka industri", percent: 36.1, value: "3.891.234" },
-      { name: "Pertanian perikanan perkebunan kehutanan", percent: 29.8, value: "3.215.678" },
-      { name: "Energi telekomunikasi transportasi", percent: 25.4, value: "2.765.432" },
-      { name: "Keuangan dan investasi", percent: 19.7, value: "2.123.987" },
-      { name: "Industri dasar kimia", percent: 17.2, value: "1.876.543" },
-      { name: "Properti dan real estate", percent: 13.5, value: "1.432.109" },
-      { name: "Pertambangan", percent: 9.1, value: "987.654" },
-    ].sort((a, b) => b.percent - a.percent);
-
     return (
       <>
         <div className="analysis-split">
-          <section className="analysis-card">
+          <section className="analysis-card full-span">
             <div className="analysis-heading"><b>Skala Usaha</b><span>Diurutkan dari terbesar</span></div>
             <SegmentedProgressBar data={scaleData} />
-          </section>
-          <section className="analysis-card">
-            <div className="analysis-heading"><b>Lapangan Usaha</b><span>Top 5</span></div>
-            <SegmentedProgressBar data={fieldData} />
           </section>
         </div>
         <div className="chart-row-70-30">
@@ -676,20 +835,9 @@ function SegmentAnalysis({ segment }: { segment: string }) {
           </section>
         </div>
         <div className="chart-row-50-50">
-          <section className="analysis-card">
-            <div className="analysis-heading"><b>Lapangan Usaha</b><span>Diurutkan dari terbesar</span></div>
-            {lapanganUsahaRows.map((item, index) => (
-              <div className="rank-row" key={item.name}>
-                <b>{item.name}</b>
-                <i><span className="agent-fill" style={{ width: `${item.percent}%` }} /></i>
-                <span>{item.value}</span>
-                <strong>{item.percent.toLocaleString("id-ID")}%</strong>
-              </div>
-            ))}
-          </section>
-          <section className="analysis-card">
+          <section className="analysis-card full-span">
             <div className="analysis-heading"><b>Kantor Wilayah</b><span>Diurutkan dari terbesar</span></div>
-            {sortedKantorWilayahRows.map((item, index) => (
+            {sortedKantorWilayahRows.map((item) => (
               <div className="rank-row" key={item.name}>
                 <b>{item.name}</b>
                 <i><span className="agent-fill" style={{ width: `${item.percent}%` }} /></i>
@@ -807,7 +955,7 @@ function SegmentPage() {
         {segmentOptions.map((item) => <Button className={segment === item ? "active" : ""} key={item} onClick={() => setSegment(item)}>{item}</Button>)}
       </div>
       <p className="page-description">Summary data kepesertaan dan iuran Nasional untuk {segment === "All Segmen" ? "seluruh segmen" : segment}</p>
-      <div className="membership-summary">
+      <div className="membership-summary pkbu-summary">
         <SummaryMetric label="Tenaga Kerja Aktif" percent={segment === "All Segmen" ? "78,08%" : "88,73%"} target={summary.target} value={summary.active} />
         <SummaryMetric label="Tenaga Kerja Masuk" target="0" value={summary.incoming} />
         <SummaryMetric label="Penerimaan Iuran (Jutaan)" percent="72,35%" target={segment === "All Segmen" ? "118.013.426" : "115.391.428"} value={summary.contribution} />
@@ -953,7 +1101,7 @@ function SingleLineChart({
             <g key={i}>
               <line stroke="var(--line)" strokeWidth="0.6" x1={padding.left} x2={width - padding.right} y1={y} y2={y} />
               <text fill="var(--muted)" fontSize={fontSize} textAnchor="end" x={padding.left - 6} y={y + fontSize / 3}>
-                {`${(yMin + i * yInterval) / unitDivisor} ${unit}`}
+                {`${(yMax - i * yInterval) / unitDivisor} ${unit}`}
               </text>
             </g>
           );
@@ -1130,14 +1278,120 @@ function ContributionDonut({
   );
 }
 
+function PageSegmentTabs({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="segment-tabs">
+      {segmentOptions.map((item) => <Button className={value === item ? "active" : ""} key={item} onClick={() => onChange(item)}>{item}</Button>)}
+    </div>
+  );
+}
+
+const comparisonSectors = [
+  { name: "Perdagangan & Jasa", a: 68, b: 54 },
+  { name: "Industri Pengolahan", a: 52, b: 61 },
+  { name: "Pertanian", a: 38, b: 47 },
+  { name: "Konstruksi", a: 31, b: 26 },
+  { name: "Transportasi", a: 24, b: 35 },
+];
+
 function ContributionPage() {
+  const [segment, setSegment] = useState("All Segmen");
+  const [kanwilA, setKanwilA] = useState("Jawa Barat");
+  const [kanwilB, setKanwilB] = useState("DKI Jakarta");
+  const [comparisonDisplay, setComparisonDisplay] = useState("Visual");
+  const kanwilOptions = kantorWilayahRows.map((item) => item.name);
   return (
     <>
+      <PageSegmentTabs value={segment} onChange={setSegment} />
+      <p className="page-description">Komposisi tenaga kerja berdasarkan lapangan usaha untuk {segment === "All Segmen" ? "seluruh segmen" : segment}.</p>
       <div className="membership-summary compact-summary">
-        <SummaryMetric centered compact label="Tenaga Kerja Aktif by Lap. Usaha" value="27.914.373" />
-        <SummaryMetric centered compact label="Tenaga Kerja Aktif by BPS" value="27.914.373" />
+        <SummaryMetric centered compact label="Tenaga Kerja by Lap. Usaha" value="27.914.373" />
+        <SummaryMetric centered compact label="Lapangan Usaha Terbesar" value="Perdagangan & Jasa" />
       </div>
-      <ContributionAnalysis title="Analisis Lap. Usaha" />
+      <ContributionAnalysis title="Analisis Lapangan Usaha" />
+      <section className="analysis-card comparison-card">
+        <div className="analysis-toolbar comparison-toolbar">
+          <div><b>Perbandingan Antar Kanwil</b><small>Bandingkan komposisi lapangan usaha</small></div>
+          <div className="toolbar-filters">
+            <FilterSelect onChange={setKanwilA} options={kanwilOptions.filter((item) => item !== kanwilB)} value={kanwilA} />
+            <span className="comparison-vs">VS</span>
+            <FilterSelect onChange={setKanwilB} options={kanwilOptions.filter((item) => item !== kanwilA)} value={kanwilB} />
+            <div className="segmented compact">{["Visual", "Tabular"].map((item) => <Button className={comparisonDisplay === item ? "active" : ""} key={item} onClick={() => setComparisonDisplay(item)}>{item}</Button>)}</div>
+          </div>
+        </div>
+        <div className="comparison-legend"><span><i className="compare-a" />{kanwilA}</span><span><i className="compare-b" />{kanwilB}</span></div>
+        {comparisonDisplay === "Visual" ? (
+          <div className="comparison-bars">
+            {comparisonSectors.map((item) => (
+              <div className="comparison-row" key={item.name}>
+                <b>{item.name}</b>
+                <div className="comparison-series"><i><span className="compare-a" style={{ width: `${item.a}%` }} /></i><em>{item.a}%</em></div>
+                <div className="comparison-series"><i><span className="compare-b" style={{ width: `${item.b}%` }} /></i><em>{item.b}%</em></div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="comparison-table">
+            <div><b>Lapangan Usaha</b><b>{kanwilA}</b><b>{kanwilB}</b><b>Selisih</b></div>
+            {comparisonSectors.map((item) => <div key={item.name}><span>{item.name}</span><span>{item.a}%</span><span>{item.b}%</span><strong>{Math.abs(item.a - item.b)} poin</strong></div>)}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function ScalePage() {
+  const [segment, setSegment] = useState("All Segmen");
+  const [display, setDisplay] = useState("Visual");
+  const scaleData = [
+    { name: "Besar", value: "11.724.037", percent: 42, color: "var(--blue-900)" },
+    { name: "Menengah", value: "8.653.456", percent: 31, color: "var(--blue-700)" },
+    { name: "Kecil", value: "5.303.731", percent: 19, color: "var(--green-500)" },
+    { name: "Mikro", value: "2.233.149", percent: 8, color: "var(--lime)" },
+  ];
+  return (
+    <>
+      <PageSegmentTabs value={segment} onChange={setSegment} />
+      <p className="page-description">Distribusi kepesertaan berdasarkan skala usaha untuk {segment === "All Segmen" ? "seluruh segmen" : segment}.</p>
+      <div className="membership-summary compact-summary">
+        <SummaryMetric centered compact label="Total Tenaga Kerja" value="27.914.373" />
+        <SummaryMetric centered compact label="Skala Dominan" value="Usaha Besar" />
+      </div>
+      <div className="analysis-toolbar"><b>Analisis Skala Usaha</b><div className="segmented compact">{["Visual", "Tabular"].map((item) => <Button className={display === item ? "active" : ""} key={item} onClick={() => setDisplay(item)}>{item}</Button>)}</div></div>
+      {display === "Visual" ? (
+        <div className="chart-row-50-50">
+          <section className="analysis-card"><div className="analysis-heading"><b>Komposisi Skala Usaha</b><span>Nasional</span></div><PieChart data={scaleData} /></section>
+          <section className="analysis-card"><div className="analysis-heading"><b>Realisasi per Skala</b><span>Diurutkan terbesar</span></div><SegmentedProgressBar data={scaleData} /></section>
+        </div>
+      ) : (
+        <section className="tabular-card"><div className="tabular-head"><span>Skala Usaha</span><span>Realisasi</span><span>Komposisi</span></div>{scaleData.map((item) => <div key={item.name}><b>{item.name}</b><span>{item.value}</span><span>{item.percent}%</span></div>)}</section>
+      )}
+    </>
+  );
+}
+
+function PKBUPage() {
+  const [segment, setSegment] = useState("All Segmen");
+  const [display, setDisplay] = useState("Visual");
+  return (
+    <>
+      <PageSegmentTabs value={segment} onChange={setSegment} />
+      <p className="page-description">Ringkasan Pemberi Kerja/Badan Usaha untuk {segment === "All Segmen" ? "seluruh segmen" : segment}.</p>
+      <div className="membership-summary">
+        <SummaryMetric label="PKBU Aktif" percent="82,41%" target="1.090.772" value="898.887" />
+        <SummaryMetric label="PKBU Baru" value="42.318" />
+        <SummaryMetric label="PKBU Menunggak" value="86.214" />
+      </div>
+      <div className="analysis-toolbar"><b>Analisis PKBU</b><div className="segmented compact">{["Visual", "Tabular"].map((item) => <Button className={display === item ? "active" : ""} key={item} onClick={() => setDisplay(item)}>{item}</Button>)}</div></div>
+      {display === "Visual" ? (
+        <div className="chart-row-50-50">
+          <PkbuTrendChart />
+          <section className="analysis-card"><div className="analysis-heading"><b>PKBU per Kanwil</b><span>Diurutkan terbesar</span></div>{kantorWilayahRows.map((item) => <div className="rank-row" key={item.name}><b>{item.name}</b><i><span className="agent-fill" style={{ width: `${item.percent}%` }} /></i><span>{item.value}</span><strong>{item.percent}%</strong></div>)}</section>
+        </div>
+      ) : (
+        <section className="tabular-card"><div className="tabular-head"><span>Kanwil</span><span>PKBU Aktif</span><span>Persentase</span></div>{kantorWilayahRows.map((item) => <div key={item.name}><b>{item.name}</b><span>{item.value}</span><span>{item.percent}%</span></div>)}</section>
+      )}
     </>
   );
 }
@@ -1221,7 +1475,7 @@ function ContributionAnalysis({ title, variant }: { title: string; variant?: "iu
         {variant === "iuran" ? <IuranTrendSection /> : (
         <div className="contribution-section">
           <div className="contribution-chart">
-            <div className="analysis-heading"><b>Komposisi TK Aktif Lap. Usaha</b></div>
+            <div className="analysis-heading"><b>Komposisi Tenaga Kerja Aktif Lap. Usaha</b></div>
             <ContributionDonut
               data={[
                 { name: "Jasa Kemasyarakatan", percent: 22.5, color: "var(--blue-700)" },
@@ -1258,7 +1512,7 @@ function ContributionAnalysis({ title, variant }: { title: string; variant?: "iu
         <div className="contribution-divider" />
         <div className="contribution-section">
           <div className="contribution-chart">
-            <div className="analysis-heading"><b>{variant === "iuran" ? "Komposisi Iuran Diterima" : "Komposisi TK Aktif BPS"}</b></div>
+            <div className="analysis-heading"><b>{variant === "iuran" ? "Komposisi Iuran Diterima" : "Komposisi Tenaga Kerja Aktif BPS"}</b></div>
             <ContributionDonut
               data={[
                 { name: "Perdagangan dan Jasa", percent: 28.4, color: "var(--green-700)" },
@@ -1331,7 +1585,7 @@ function ReceivablesPage() {
     { name: "SULAWESI MALUKU", berpiutang: 150000, tertagih: 230000 },
     { name: "JATENG DAN DIY", berpiutang: 140000, tertagih: 210000 },
     { name: "SUMBAGSEL", berpiutang: 125000, tertagih: 195000 },
-  ];
+  ].sort((a, b) => b.berpiutang - a.berpiutang);
   const lineData = [
     { month: "DEC", berpiutang: 185000, tertagih: 245000 },
     { month: "JAN", berpiutang: 195000, tertagih: 265000 },
@@ -1347,9 +1601,9 @@ function ReceivablesPage() {
     <>
       <div className="membership-summary receivable-summary">
         <SummaryMetric label="Total Nominal Piutang" value="340,5 M" />
-        <SummaryMetric label="Total KPBU Berpiutang" value="340,5 M" />
+        <SummaryMetric label="Total PKBU Berpiutang" value="340,5 M" />
         <SummaryMetric label="Total Nominal Tertagih" value="340,5 M" />
-        <SummaryMetric label="Total KPBU Tertagih" value="340,5 M" />
+        <SummaryMetric label="Total PKBU Tertagih" value="340,5 M" />
       </div>
       <div className="analysis-toolbar receivable-toolbar">
         <b>Analisis Piutang</b>
@@ -1378,15 +1632,15 @@ function ReceivablesPage() {
         <>
           <div className="receivable-grid">
             <section className="analysis-card">
-              <div className="analysis-heading"><b>KPBU Piutang & Tertagih</b><span>07/09/2026</span></div>
+              <div className="analysis-heading"><b>PKBU Piutang & Tertagih</b><span>07/09/2026</span></div>
               <LineChart data={lineData} yMax={400000} yInterval={50000} />
-              <div className="chart-legend"><span><i className="dot blue" />KPBU Berpiutang</span><span><i className="dot green" />KPBU Tertagih</span></div>
+              <div className="chart-legend"><span><i className="dot blue" />PKBU Berpiutang</span><span><i className="dot green" />PKBU Tertagih</span></div>
             </section>
             <section className="analysis-card">
-              <div className="analysis-heading"><b>Komposisi KPBU Piutang & Tertagih</b></div>
+              <div className="analysis-heading"><b>Komposisi PKBU Piutang & Tertagih</b></div>
               <div className="donut-content compact-donut">
                 <Donut label="Berpiutang" value="79,5%" />
-                <div className="composition-list"><span><i className="composition-color color-1" />KPBU Berpiutang<b>8.653.456</b></span><span><i className="composition-color color-2" />KPBU Tertagih<b>2.233.149</b></span></div>
+                <div className="composition-list"><span><i className="composition-color color-1" />PKBU Berpiutang<b>8.653.456</b></span><span><i className="composition-color color-2" />PKBU Tertagih<b>2.233.149</b></span></div>
               </div>
             </section>
           </div>
@@ -1400,12 +1654,13 @@ function ReceivablesPage() {
           </div>
           <div className="receivable-grid lower">
             <section className="analysis-card">
-              <div className="analysis-heading"><b>Region KPBU Piutang & Tertagih</b></div>
+              <div className="analysis-heading"><b>Kanwil PKBU Piutang & Tertagih</b></div>
               <HorizontalBarChart data={regionBarData} xMax={400000} xInterval={50000} />
-              <div className="chart-legend"><span><i className="dot blue" />KPBU Berpiutang</span><span><i className="dot green" />KPBU Tertagih</span></div>
+              <div className="chart-legend"><span><i className="dot blue" />PKBU Berpiutang</span><span><i className="dot green" />PKBU Tertagih</span></div>
             </section>
             <section className="analysis-card">
-              <div className="analysis-heading"><b>Piutang Terurut (Terbesar)</b></div>
+              <div className="analysis-heading"><b>Piutang per Kanwil</b><span>Diurutkan dari realisasi terbesar</span></div>
+              <div className="top-debt-head"><span>No.</span><span>Kanwil</span><span>Realisasi</span><span>Persentase</span></div>
               {[
                 { name: "Jawa Barat", value: 15234567 },
                 { name: "DKI Jakarta", value: 14123890 },
@@ -1424,6 +1679,7 @@ function ReceivablesPage() {
                     <span>{debtPage * debtsPerPage + index + 1}</span>
                     <b>{item.name}</b>
                     <strong>{item.value.toLocaleString("id-ID")}</strong>
+                    <em>{((item.value / 15234567) * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 })}%</em>
                   </div>
                 ))}
               <div className="top-debt-pagination">
@@ -1436,7 +1692,7 @@ function ReceivablesPage() {
         </>
       ) : (
         <section className="tabular-card">
-          <div className="tabular-head"><span>Wilayah</span><span>Berpiutang</span><span>Tertagih</span></div>
+          <div className="tabular-head"><span>Kanwil</span><span>Realisasi</span><span>Persentase</span></div>
           {["Jawa Barat", "Kalimantan", "Jatim", "DKI Jakarta", "Sulawesi Maluku"].map((item, index) => <div key={item}><b>{item}</b><span>{[11724037, 8653456, 5303731, 2233149, 1233149][index].toLocaleString("id-ID")}</span><span>{(20.5 - index).toFixed(1)}%</span></div>)}
         </section>
       )}
@@ -1450,9 +1706,11 @@ function IuranPage() {
   const total = iuranMonthly.reduce((sum, item) => sum + item.value, 0);
   const average = total / iuranMonthly.length;
   const achievement = (total / target) * 100;
+  const bestMonth = iuranMonthly.reduce((best, item) => item.value > best.value ? item : best, iuranMonthly[0]);
+  const targetGap = Math.max(0, target - total);
   return (
     <>
-      <div className="membership-summary two-up">
+      <div className="membership-summary iuran-summary">
         <SummaryMetric
           label="Penerimaan Iuran (Jutaan)"
           percent={`${achievement.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`}
@@ -1464,23 +1722,40 @@ function IuranPage() {
           target={formatId(target / 12)}
           value={formatId(average)}
         />
+        <SummaryMetric
+          compact
+          label="Kekurangan dari Target (Jutaan)"
+          value={formatId(targetGap)}
+        />
+        <SummaryMetric
+          compact
+          label="Bulan Tertinggi"
+          value={`${bestMonth.month} · ${formatId(bestMonth.value)}`}
+        />
       </div>
       <ContributionAnalysis title="Analisis Iuran" variant="iuran" />
     </>
   );
 }
 
-function MembershipPage() {
-  const [category, setCategory] = useState("TK Aktif");
+function MembershipPage({ section }: { section: MembershipSection }) {
+  const [dashboardTab, setDashboardTab] = useState<MembershipDashboardTab>("Tenaga Kerja");
+  const dashboardTabs: MembershipDashboardTab[] = ["Tenaga Kerja", "PKBU", "Iuran", "Piutang"];
   return (
     <main className="membership-page">
-      <div className="membership-categories">
-        {["TK Aktif", "Iuran", "Piutang", "Lap. Usaha"].map((item) => <Button className={category === item ? "active" : ""} key={item} onClick={() => setCategory(item)}>{item}</Button>)}
-      </div>
-      {category === "TK Aktif" && <SegmentPage />}
-      {category === "Lap. Usaha" && <ContributionPage />}
-      {category === "Iuran" && <IuranPage />}
-      {category === "Piutang" && <ReceivablesPage />}
+      {section === "Kepesertaan Beranda" && (
+        <>
+          <div className="membership-categories">
+            {dashboardTabs.map((item) => <Button className={dashboardTab === item ? "active" : ""} key={item} onClick={() => setDashboardTab(item)}>{item}</Button>)}
+          </div>
+          {dashboardTab === "Tenaga Kerja" && <SegmentPage />}
+          {dashboardTab === "PKBU" && <PKBUPage />}
+          {dashboardTab === "Iuran" && <IuranPage />}
+          {dashboardTab === "Piutang" && <ReceivablesPage />}
+        </>
+      )}
+      {section === "Skala Usaha" && <ScalePage />}
+      {section === "Lapangan Usaha" && <ContributionPage />}
     </main>
   );
 }
@@ -1564,11 +1839,41 @@ export default function App() {
   const [page, setPage] = useState<"home" | "coverage" | "membership">("home");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [activeNav, setActiveNav] = useState("Beranda");
+  const [membershipSection, setMembershipSection] = useState<MembershipSection>("Kepesertaan Beranda");
   const [chatOpen, setChatOpen] = useState(true);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [tab, setTab] = useState("Detail Klaim");
-  const [dateOpen, setDateOpen] = useState(false);
+  const [reportDate, setReportDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  });
+  const [headerKanwil, setHeaderKanwil] = useState("Nasional");
+  const [headerBranch, setHeaderBranch] = useState("Semua Kantor Cabang");
+  const detailRef = useRef<HTMLDivElement>(null);
   const tabs = useMemo(() => ["Detail Klaim", "Detail Dana Investasi", "Detail Hasil Investasi"], []);
+  const headerKanwilOptions = ["Nasional", "Sumbagut", "Sumbagsel", "DKI Jakarta", "Jawa Barat", "Jateng dan DIY", "Jatim", "Kalimantan", "Sulawesi Maluku"];
+  const headerBranches: Record<string, string[]> = {
+    Nasional: ["Semua Kantor Cabang"],
+    "Jawa Barat": ["Semua Kantor Cabang", "Bandung Suci", "Bekasi Kota", "Bogor Kota"],
+    "DKI Jakarta": ["Semua Kantor Cabang", "Jakarta Kebon Sirih", "Jakarta Salemba", "Jakarta Mangga Dua"],
+  };
+  const branchOptions = headerBranches[headerKanwil] ?? ["Semua Kantor Cabang", `${headerKanwil} Cabang 1`, `${headerKanwil} Cabang 2`];
+  const lastUpdated = useMemo(() => new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }), []);
+  const displayedDataDate = useMemo(() => {
+    const date = new Date(`${reportDate}T00:00:00`);
+    return date.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  }, [reportDate]);
+  const openDetail = (nextTab: string) => {
+    setTab(nextTab);
+    window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      detailRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    });
+  };
 
   useEffect(() => {
     const gapRem = 1.25;
@@ -1617,7 +1922,10 @@ export default function App() {
         onChange={(item) => {
           setActiveNav(item);
           if (item === "Beranda") setPage("home");
-          else if (item === "Kepesertaan") setPage("membership");
+          else if (membershipSections.some((section) => section.id === item)) {
+            setMembershipSection(item as MembershipSection);
+            setPage("membership");
+          } else setPage("home");
         }}
         onCloseSidebar={() => setSidebarCollapsed(true)}
         onCollapse={() => setSidebarCollapsed((value) => !value)}
@@ -1627,22 +1935,24 @@ export default function App() {
       <div className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{page === "coverage" ? "Kepesertaan" : activeNav === "Beranda" ? "Data Nasional" : activeNav}</span>
-            <b>{page === "coverage" ? "DASHBOARD POTENSI DAN COVERAGE SEMESTA TENAGA KERJA" : page === "membership" ? "TK AKTIF · IURAN · PIUTANG · LAP. USAHA" : "SUMMARY"}</b>
-            <small>Terakhir diperbarui: Sep 7, 2026 | 04:50:41</small>
+            <span className="eyebrow">{page === "coverage" || page === "membership" ? "Kepesertaan" : activeNav === "Beranda" ? "Data Nasional" : activeNav}</span>
+            {page !== "membership" && <b>{page === "coverage" ? "DASHBOARD POTENSI DAN COVERAGE SEMESTA TENAGA KERJA" : "SUMMARY"}</b>}
+            <div className="header-data-meta">
+              <small>Terakhir diperbarui: {lastUpdated} | 04:50:41</small>
+              <small>Data ditampilkan: {displayedDataDate}</small>
+            </div>
           </div>
           <div className="header-actions">
-            <div className="date-wrap">
-              <Button className="date-button" onClick={() => setDateOpen(!dateOpen)}><span>07 / 09 / 2026</span><Icon name="calendar" /></Button>
-              {dateOpen && <div className="date-menu"><b>Periode laporan</b><Button onClick={() => setDateOpen(false)}>September 2026</Button><Button onClick={() => setDateOpen(false)}>Agustus 2026</Button></div>}
-            </div>
+            <label className="header-date"><span>Tanggal Data</span><input aria-label="Tanggal data" onChange={(event) => setReportDate(event.target.value)} type="date" value={reportDate} /></label>
+            <FilterSelect onChange={(value) => { setHeaderKanwil(value); setHeaderBranch("Semua Kantor Cabang"); }} options={headerKanwilOptions} scrollable value={headerKanwil} />
+            <FilterSelect onChange={setHeaderBranch} options={branchOptions} value={headerBranch} />
           </div>
         </header>
         <div className={chatNormal ? "content-row chat-open" : "content-row"}>
           {page === "coverage" ? (
             <CoveragePage onBack={() => setPage("home")} />
           ) : page === "membership" ? (
-            <MembershipPage />
+            <MembershipPage section={membershipSection} />
           ) : (
             <main className="dashboard">
               {activeNav !== "Beranda" && <div className="notice">Menampilkan ringkasan <b>{activeNav}</b>. Pilih Beranda untuk kembali ke dashboard nasional.</div>}
@@ -1650,25 +1960,26 @@ export default function App() {
               <div className="summary-grid">
                 <div className="summary-column">
                   <ProgressCard label="Target Tahunan Tenaga Kerja Aktif" percent="76,81%" segments={["TW I: 27,50%", "TW II: 27,50%", "TW III: 21,81%"]} target="63.311.789" value="48.629.219" />
-                  <ProgressCard label="Coverage Tenaga Kerja" detailHint onClick={() => setPage("coverage")} percent="37,41%" segments={["TW I: 14,20%", "TW II: 16,50%", "TW III: 6,71%"]} target="129.983.320" value="48.629.219" />
+                  <ProgressCard label="Coverage Tenaga Kerja" detailHint onClick={() => setPage("coverage")} percent="37,41%" segments={[]} simple target="129.983.320" value="48.629.219" />
                   <section className="large-stat"><div><Icon name="people" /><span>Tenaga Kerja Masuk</span></div><strong>19.720.544 <small>jiwa</small></strong><Trend mom="-86,60%" yoy="+12,11%" /></section>
                   <section className="large-stat"><div><Icon name="briefcase" /><span>Pemberi Kerja / Badan Usaha Aktif</span></div><strong>898.887 <small>BU</small></strong><Trend mom="+0,01%" yoy="+3,90%" /></section>
                 </div>
                 <div className="summary-column">
                   <ProgressCard label="Penerimaan Iuran" percent="68,17%" segments={["TW I: 25,40%", "TW II: 30,12%", "TW III: 12,65%"]} target="Rp 118.013 M" value="Rp 80.446 M" />
-                  <section className="claim-card">
+                  <button className="claim-card interactive-summary-card" onClick={() => openDetail("Detail Klaim")} type="button">
                     <div className="card-title"><Icon name="claim" />Klaim Terbayar</div>
+                    <span className="detail-hint">Lihat Detail</span>
                     <div className="claim-stats"><div><small>Nominal</small><strong>Rp 49.945 M</strong></div><div><small>Jumlah Kasus</small><strong>4.332.344</strong></div></div>
                     <Trend mom="-28.822,08%" yoy="+7,55%" />
-                  </section>
-                  <ProgressCard label="Dana Investasi" percent="93,25%" segments={["TW I: 40,00%", "TW II: 35,15%", "TW III: 18,10%"]} target="Rp 1.001.182 M" value="Rp 933.625 M" />
-                  <ProgressCard label="Hasil Investasi" percent="61,24%" segments={["TW I: 25,00%", "TW II: 20,24%", "TW III: 16,00%"]} target="Rp 70.364 M" value="Rp 44.133 M" />
+                  </button>
+                  <ProgressCard detailHint label="Dana Investasi" onClick={() => openDetail("Detail Dana Investasi")} percent="93,25%" segments={["TW I: 40,00%", "TW II: 35,15%", "TW III: 18,10%"]} target="Rp 1.001.182 M" value="Rp 933.625 M" />
+                  <ProgressCard detailHint label="Hasil Investasi" onClick={() => openDetail("Detail Hasil Investasi")} percent="61,24%" segments={["TW I: 25,00%", "TW II: 20,24%", "TW III: 16,00%"]} target="Rp 70.364 M" value="Rp 44.133 M" />
                 </div>
               </div>
               <div className="tabs" role="tablist">
                 {tabs.map((item) => <Button className={tab === item ? "tab active" : "tab"} key={item} onClick={() => setTab(item)}>{item}</Button>)}
               </div>
-              <ClaimDetails tab={tab} />
+              <div ref={detailRef} className="detail-scroll-target"><ClaimDetails tab={tab} /></div>
             </main>
           )}
         </div>
