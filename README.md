@@ -2,6 +2,8 @@
 
 Interactive dashboard prototype for ExSISt, built with React, TypeScript, and Vite.
 
+🔗 **[Open the Live Website](https://exsist-dashbaord.vercel.app/)**
+
 ## Requirements
 
 - Node.js 20 or newer
